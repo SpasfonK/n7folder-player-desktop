@@ -1,0 +1,111 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Qualité : typage TypeScript, tests du coeur Rust, clippy sans aucun avertissement.
+  quality:
+    name: Tests et lint
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: Dépendances front
+        run: npm install --no-audit --no-fund
+
+      # Le build front est requis avant cargo : Tauri embarque le dossier dist/ à la compilation.
+      - name: Typage TypeScript et build front
+        run: npm run build
+
+      - name: Tests du coeur (n7-core)
+        run: cargo test -p n7-core
+
+      - name: Clippy (zéro avertissement)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Livrable : exécutable portable + installateur NSIS, Windows x64.
+  build:
+    name: Exécutable Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: Dépendances front
+        run: npm install --no-audit --no-fund
+
+      - name: Compilation Tauri (release)
+        run: npx tauri build
+
+      - name: Rassembler les livrables
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-out | Out-Null
+          Copy-Item target/release/n7-folder-player.exe release-out/n7Folder-Player-portable-x64.exe
+          Copy-Item target/release/bundle/nsis/*.exe release-out/
+          $sums = Get-FileHash release-out/* -Algorithm SHA256 | ForEach-Object {
+            "$($_.Hash)  $(Split-Path $_.Path -Leaf)"
+          }
+          $sums | Set-Content release-out/SHA256SUMS.txt
+          Get-ChildItem release-out | ForEach-Object {
+            "{0}  {1:N1} Mo" -f $_.Name, ($_.Length / 1MB)
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: n7folder-player-windows-x64
+          path: release-out/*
+          if-no-files-found: error
+
+  # Publication : uniquement sur un tag vX.Y.Z, une fois qualité et build au vert.
+  release:
+    name: Publier la release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: n7folder-player-windows-x64
+          path: release-out
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-out/*
+          generate_release_notes: true
