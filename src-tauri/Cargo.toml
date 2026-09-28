@@ -1,0 +1,21 @@
+[package]
+name = "n7-folder-player"
+description = "Lecteur de musique par dossiers, surface zoomable façon n7player (Windows 10/11)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+n7-core = { path = "../crates/n7-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+rodio = "0.19"
+
+[target.'cfg(windows)'.dependencies]
+window-vibrancy = "0.5"
