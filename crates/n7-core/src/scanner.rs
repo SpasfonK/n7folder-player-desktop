@@ -408,7 +408,9 @@ mod tests {
 
         assert_eq!(outcome.tracks.len(), 1);
         assert_eq!(outcome.tracks[0].file_name, "01 - Titre.mp3");
-        assert!(outcome.stats.skipped >= 2); // fichier vide + fichier caché
+        // Seul le fichier vide est compté comme « ignoré » : les fichiers cachés et les dossiers
+        // système sont écartés silencieusement, sans être signalés à l'utilisateur.
+        assert_eq!(outcome.stats.skipped, 1);
 
         fs::remove_dir_all(&root).ok();
     }
